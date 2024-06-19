@@ -1,6 +1,5 @@
 import torch
 from torch.nn import functional as F
-import math
 import time
 import os
 
@@ -15,21 +14,6 @@ if torch.cuda.is_available:
 
 device = "cuda" if torch.cuda.is_available else "cpu"
 print("using device: ", device)
-
-
-def get_lr_schedule(step, max_lr=3e-4, warmup_steps=10, max_steps=50):
-    if step < warmup_steps:
-        return max_lr * (step + 1) / warmup_steps
-
-    min_lr = 0.1 * max_lr
-    if step > max_steps:
-        return min_lr
-
-    # in [warmpu_steps, max_steps], cos(rate) in [1, -1], rate from 0 to \pi
-    decay_rate = (step - warmup_steps) / (max_steps - warmup_steps)
-    assert 0 <= decay_rate <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_rate))  # [1, 0]
-    return min_lr + coeff * (max_lr - min_lr)  # [max_lr, min_lr]
 
 
 def train_gpt2(model, total_steps):
@@ -153,7 +137,7 @@ def eval_gpt2(model, total_steps):
 # train GPT2 model from scratch
 # trick 4: 50304 % 128 == 0, memory layout, throughput: 39000 -> 42400
 model = GPT(GPTConfig(vocab_size=50304))
-train_gpt2(model, 30)
+train_gpt2(model, 20)
 
 # load GPT2 model we trained
 # log_dir = "log"
