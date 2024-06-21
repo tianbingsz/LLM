@@ -7,7 +7,8 @@ import time
 import os
 
 from llm_gpt2 import GPT, GPTConfig
-from text_data_loader import DistributedDataLoaderLite
+from text_data_loader import FineWebDistributedDataLoaderLite
+from optimizer import configure_optimizer, get_lr_schedule
 
 # --------------------------------------------------------------------------
 # train GPT on a batch of data with DDP on 4 GPUs
@@ -40,8 +41,14 @@ torch.manual_seed(1337)
 if torch.cuda.is_available:
     torch.cuda.manual_seed(1337)
 
+log_dir = "log"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"log.txt")
+with open(log_file, "w") as f:  # open for writing to clear the file
+    pass
 
-def train_gpt2(model, total_steps):
+
+def train_gpt2(model, warmup_steps, total_steps):
     total_batch_size = 524288  # 2^19, ~.5M tokens
     B, T = 8, 1024
     assert (
@@ -52,8 +59,8 @@ def train_gpt2(model, total_steps):
         print("total batch size: ", total_batch_size)
         print(f"calc gradient accumalate steps : {grad_accum_steps}")
 
-    train_loader = DistributedDataLoaderLite(
-        B=B, T=T, process_rank=ddp_rank, num_process=ddp_world_size
+    train_loader = FineWebDistributedDataLoaderLite(
+        B=B, T=T, process_rank=ddp_rank, num_process=ddp_world_size, split="train"
     )
 
     # trick 1 precision: set fp32 instead of float32
@@ -65,10 +72,11 @@ def train_gpt2(model, total_steps):
     # throughput 38400 -> 39000, suitable for A100
     model = torch.compile(model)
     model = DDP(model, device_ids=[ddp_local_rank])
+    raw_model = model.module  # always contains the "raw" unwrapped model
 
     # algo trick 1: AdamW with (0.9, 0.95)
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=3e-4, betas=(0.9, 0.95), eps=1e-8
+    optimizer = configure_optimizer(
+        raw_model, weight_decay=0.1, learning_rate=6e-4, device_type=device_type
     )
     model.train()
     for step in range(total_steps):
@@ -97,9 +105,11 @@ def train_gpt2(model, total_steps):
         # algo trick 2: clip the gradient: https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html#torch.nn.utils.clip_grad_norm_
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         # algo trick 4: cos learning rate schedule
-        # lr = get_lr_schedule(step=step, max_steps=total_steps)
-        # for params_group in optimizer.param_groups:
-        #    params_group['lr'] = lr
+        lr = get_lr_schedule(
+            step=step, warmup_steps=warmup_steps, max_steps=total_steps
+        )
+        for params_group in optimizer.param_groups:
+            params_group["lr"] = lr
         optimizer.step()
         torch.cuda.synchronize()
 
@@ -110,14 +120,13 @@ def train_gpt2(model, total_steps):
         ) / (t1 - t0)
         if ddp_rank == 0:  # master process
             print(
-                f"step: {step:4d} | loss: {loss_accum.item(): .6f} | norm: {norm: .4f} | dt: {dt: .2f} ms | {tokens_per_sec: .2f}"
+                f"step: {step:4d} | loss: {loss_accum.item(): .6f} | lr: {lr: .4e} | norm: {norm: .4f} | dt: {dt: .2f} ms | {tokens_per_sec: .2f}"
             )
+            with open(log_file, "a") as f:
+                f.write(f"step: {step:4d} | loss: {loss_accum.item(): .6f}\n")
 
     # save checkpoint
-    raw_model = model.module  # always contains the "raw" unwrapped model
     if ddp_rank == 0:  # master process
-        log_dir = "log"
-        os.makedirs(log_dir, exist_ok=True)
         check_point_file = os.path.join(log_dir, f"model_{total_steps}.pt")
         check_point = {"model": raw_model.state_dict(), "config": raw_model.config}
         torch.save(check_point, check_point_file)
@@ -130,4 +139,7 @@ def train_gpt2(model, total_steps):
 # train GPT2 model from scratch
 # trick 4: 50304 % 128 == 0, memory layout, throughput: 39000 -> 42400
 model = GPT(GPTConfig(vocab_size=50304))
-train_gpt2(model, 50)
+
+warmup_steps = 70
+max_step = 1907  # actually 1907, 1000M tokens, each step process 0.5M tokens a batch
+train_gpt2(model, warmup_steps, max_step)
