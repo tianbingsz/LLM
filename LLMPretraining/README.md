@@ -1,5 +1,6 @@
 ## Pretraining LLM 
-Build GPT2/GPT3 from scratch, following from Andrej Karpathy's [video](https://www.youtube.com/watch?v=zduSFxRajkE).
+Build GPT2/GPT3 from scratch, following from Andrej Karpathy's [Video](https://www.youtube.com/watch?v=l8pRSuU81PU)
+.
 
 We trained GPT-2 from scratch using 4 A10 GPUs with Distributed Data Parallel (DDP). 
 ```bash
