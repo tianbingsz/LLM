@@ -78,14 +78,21 @@ class FineWebDistributedDataLoaderLite:
     current GPU process: process_rank
     """
 
-    def __init__(self, B, T, process_rank=0, num_process=1, split="train"):
+    def __init__(
+        self,
+        B,
+        T,
+        process_rank=0,
+        num_process=1,
+        split="train",
+        data_root="edu_fineweb1B",
+    ):
         self.B = B
         self.T = T
         self.process_rank = process_rank
         self.num_process = num_process
         assert split in {"train", "val"}
 
-        data_root = "edu_fineweb1B"
         shards = os.listdir(data_root)
         shards = [s for s in shards if split in s]  # train or val
         shards = sorted(shards)
@@ -94,7 +101,7 @@ class FineWebDistributedDataLoaderLite:
 
         assert len(shards) > 0, f"no shards found in {split}"
         if process_rank == 0:  # master process
-            print(f"train dataset: {data_root}, found {len(shards)} for {split}")
+            print(f"using dataset: {data_root}, found {len(shards)} for {split}")
 
         self.reset()
 

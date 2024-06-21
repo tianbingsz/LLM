@@ -85,65 +85,7 @@ def train_gpt2(model, total_steps):
     torch.save(check_point, check_point_file)
 
 
-def remove_prefix(state_dict, prefix):
-    return {k[len(prefix) :]: v for k, v in state_dict.items() if k.startswith(prefix)}
-
-
-def load_model(check_point_file):
-    checkpoint = torch.load(check_point_file)  # read checkpoint from log
-    model = GPT(checkpoint["config"])  # GPT2 model with rand init weights
-    state_dict = remove_prefix(checkpoint["model"], "_orig_mod.")
-    model.load_state_dict(state_dict)  # load weights from checkpoint
-    return model
-
-
-def eval_gpt2(model, total_steps):
-    B, T = 8, 1024
-    # we acutally not use the right eval dataset, just to test the code
-    eval_loader = DataLoaderLite(B=B, T=T)
-
-    model.to(device=device)
-    # trick 3: compile : https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html
-    model = torch.compile(model)
-
-    model.eval()
-    eval_loss_accum = 0.0
-    with torch.no_grad():
-        for i in range(total_steps):
-            t0 = time.time()
-            x, y = eval_loader.next_batch()
-            x, y = x.to(device=device), y.to(device=device)
-
-            # trick 2: Auto Mixed Precison (https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html)
-            # logits: bfloat16, weight, loss: float32
-            with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                _, loss = model(x, y)
-            eval_loss_accum += loss.detach()
-            torch.cuda.synchronize()
-
-            t1 = time.time()
-            dt = (t1 - t0) * 1000
-            tokens_per_sec = (eval_loader.B * eval_loader.T) / (t1 - t0)
-            print(
-                f"step: {i:4d} | loss: {loss.item(): .6f} | dt: {dt: .2f} ms | {tokens_per_sec: .2f}"
-            )
-        eval_loss_accum /= total_steps
-        print(
-            f"total eval step: {total_steps: 4d}, average eval log loss: {eval_loss_accum.item(): .6f}"
-        )
-        return eval_loss_accum.item()
-
-
 # train GPT2 model from scratch
 # trick 4: 50304 % 128 == 0, memory layout, throughput: 39000 -> 42400
 model = GPT(GPTConfig(vocab_size=50304))
 train_gpt2(model, 20)
-
-# load GPT2 model we trained
-# log_dir = "log"
-# check_point_file = os.path.join(log_dir, "model_20.pt")
-# model = load_model(check_point_file)
-# continuous training GPT2
-# train_gpt2(model, 10)
-# eval GPT2 we trained
-# eval_gpt2(model, 20)

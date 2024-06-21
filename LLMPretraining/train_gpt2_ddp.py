@@ -9,6 +9,7 @@ import os
 from llm_gpt2 import GPT, GPTConfig
 from text_data_loader import FineWebDistributedDataLoaderLite
 from optimizer import configure_optimizer, get_lr_schedule
+from utils import eval_gpt2
 
 # --------------------------------------------------------------------------
 # train GPT on a batch of data with DDP on 4 GPUs
@@ -46,9 +47,18 @@ os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"log.txt")
 with open(log_file, "w") as f:  # open for writing to clear the file
     pass
+log_eval_file = os.path.join(log_dir, f"log_eval.txt")
+with open(log_eval_file, "w") as f:
+    pass
 
 
-def train_gpt2(model, warmup_steps, total_steps):
+def train_gpt2(
+    model,
+    data_root="edu_fineweb1B",
+    warmup_steps=70,
+    total_steps=1907,
+    eval_per_steps=250,
+):
     total_batch_size = 524288  # 2^19, ~.5M tokens
     B, T = 8, 1024
     assert (
@@ -60,7 +70,21 @@ def train_gpt2(model, warmup_steps, total_steps):
         print(f"calc gradient accumalate steps : {grad_accum_steps}")
 
     train_loader = FineWebDistributedDataLoaderLite(
-        B=B, T=T, process_rank=ddp_rank, num_process=ddp_world_size, split="train"
+        B=B,
+        T=T,
+        process_rank=ddp_rank,
+        num_process=ddp_world_size,
+        split="train",
+        data_root=data_root,
+    )
+
+    eval_loader = FineWebDistributedDataLoaderLite(
+        B=B,
+        T=T,
+        process_rank=ddp_rank,
+        num_process=ddp_world_size,
+        split="val",
+        data_root=data_root,
     )
 
     # trick 1 precision: set fp32 instead of float32
@@ -78,9 +102,27 @@ def train_gpt2(model, warmup_steps, total_steps):
     optimizer = configure_optimizer(
         raw_model, weight_decay=0.1, learning_rate=6e-4, device_type=device_type
     )
-    model.train()
     for step in range(total_steps):
         t0 = time.time()
+        last_step = step == total_steps - 1
+        # eval model per (e.g. 250) steps print at master process
+        if (step > 0 and step % eval_per_steps == 0) or last_step:
+            model.eval()
+            eval_loader.reset()
+            eval_loss = eval_gpt2(
+                model,
+                eval_loader=eval_loader,
+                device=device,
+                device_type=device_type,
+                ddp=True,
+            )
+            if ddp_rank == 0:
+                print(f"step: {step: 4d}, validation loss: {eval_loss: .6f}")
+                with open(log_eval_file, "a") as f:
+                    f.write(f"step: {step:4d} | loss: {eval_loss: .6f}\n")
+
+        # train model per step
+        model.train()
         optimizer.zero_grad()
 
         # algo trick 3: batch size ~0.5M, accumlate the grad with 0.5M/(B*T) steps
@@ -139,7 +181,13 @@ def train_gpt2(model, warmup_steps, total_steps):
 # train GPT2 model from scratch
 # trick 4: 50304 % 128 == 0, memory layout, throughput: 39000 -> 42400
 model = GPT(GPTConfig(vocab_size=50304))
-
-warmup_steps = 70
-max_step = 1907  # actually 1907, 1000M tokens, each step process 0.5M tokens a batch
-train_gpt2(model, warmup_steps, max_step)
+data_root = "edu_fineweb10B"  # 10B tokens
+warmup_steps = 715
+max_steps = 19073  # 10B tokens ~1 epoch, each step process a batch of 0.5M tokens
+train_gpt2(
+    model,
+    data_root=data_root,
+    warmup_steps=warmup_steps,
+    total_steps=max_steps,
+    eval_per_steps=250,
+)
