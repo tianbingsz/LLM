@@ -1,0 +1,19 @@
+STaR: Bootstrapping Reasoning With Reasoning
+Quiet-STaR: Language Models Can Teach Themselves to Think Before Speaking
+Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters
+Let's Verify Step by Step
+Improve Mathematical Reasoning in Language Models by Automated Process Supervision
+Monte Carlo Tree Search Boosts Reasoning via Iterative Preference Learning
+Q*: Improving Multi-step Reasoning for LLMs with Deliberative Planning
+Chain of Preference Optimization: Improving Chain-of-Thought Reasoning in LLMs
+Generative Verifiers: Reward Modeling as Next-Token Prediction
+Agent Q: Advanced Reasoning and Learning for Autonomous AI Agents
+Building Math Agents with Multi-Turn Iterative Preference Learning
+ArCHer: Training Language Model Agents via Hierarchical Multi-Turn RL
+Tree of Thoughts: Deliberate Problem Solving with Large Language Models
+ReST meets ReAct: Self-Improvement for Multi-Step Reasoning LLM Agent
+Can Language Models Solve Olympiad Programming?
+Rewarding Progress: Scaling Automated Process Verifiers for LLM Reasoning
+Supervised Chain of Thought
+Large Language Monkeys: Scaling Inference Compute with Repeated Sampling
+Learning How Hard to Think: Input-Adaptive Allocation of LM Computation
