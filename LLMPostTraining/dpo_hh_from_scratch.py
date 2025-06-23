@@ -277,32 +277,6 @@ def dpo_training_loop(model, ref_model, dataloader, lr=1e-5, max_epoches=1, devi
     # Optional: save model checkpoint here
     # model.save_pretrained("checkpoints/dpo")
 
-def dpo_training_loop_amp(model, ref_model, dataloader, lr=1e-5, max_epochs=1, device=device):
-    model.to(device)
-    ref_model.to(device)
-    model.train()
-    ref_model.eval()
-
-    optimizer = torch.optim.RMSprop(model.parameters(), lr=lr)
-
-    for epoch in range(max_epochs):
-        for step, batch in enumerate(dataloader):
-            # Move batch to device
-            batch = {k: v.to(device) for k, v in batch.items()}
-
-            optimizer.zero_grad()
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                loss = dpo_loss(model, ref_model, batch)
-            loss.backward()
-            norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-
-            if (step + 1) % 10 == 0:
-              print(f"Epoch {epoch+1}/{max_epochs}, Step {step+1}/{len(dataloader)}, Loss: {loss.item()}, Grad Norm: {norm}")
-
-    # Optional: save model checkpoint here
-    # model.save_pretrained("checkpoints/dpo")
-
 def dpo_training_loop_gradient_accum(
     model,
     ref_model,
